@@ -69,7 +69,7 @@ if (!fs.existsSync(UPLOADS_DIR)) {
   fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 }
 
-// Multer: PNG y JPG
+// Multer: solo PNG
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     cb(null, UPLOADS_DIR);
@@ -195,4 +195,5 @@ if (!process.env.VERCEL) {
 }
 
 module.exports = app;
+
 
