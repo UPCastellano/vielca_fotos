@@ -1,7 +1,9 @@
 node_modules/
 uploads/
 .env
+.env.local
 .DS_Store
 *.log
 /tmp
+*.ps1.bak
 
