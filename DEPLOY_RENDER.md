@@ -113,6 +113,23 @@ const PORT = process.env.PORT || 3000;
 - Asegúrate de que el token sea válido (no haya expirado)
 - Si expiró, obtén uno nuevo con `node auth-google.js` y actualiza la variable
 
+### Error: "Unexpected non-whitespace character after JSON"
+**Causa:** El JSON en las variables de entorno tiene caracteres inválidos o saltos de línea.
+
+**Solución:**
+1. **GOOGLE_SERVICE_ACCOUNT**: Debe ser UNA SOLA LÍNEA, sin saltos de línea, sin espacios al inicio/final
+2. **GOOGLE_DRIVE_TOKEN**: Debe ser UNA SOLA LÍNEA, sin saltos de línea, sin espacios al inicio/final
+3. Copia el JSON completo desde `credentials/token.json` o `credentials/client_secret.json`
+4. Pega directamente en Render sin modificar
+5. Asegúrate de que no haya comillas adicionales alrededor del JSON
+
+**Verificar JSON válido en PowerShell:**
+```powershell
+$json = 'TU_JSON_AQUI'
+$json | ConvertFrom-Json
+```
+Si no da error, el JSON es válido.
+
 ### Las fotos no se muestran
 - Revisa los logs de Render (en el dashboard, sección **Logs**)
 - Verifica que el token sea válido
