@@ -6,4 +6,9 @@ uploads/
 *.log
 /tmp
 *.ps1.bak
+# Google Service Account credentials
+*-service-account.json
+service-account*.json
+credentials.json
+google-credentials.json
 
