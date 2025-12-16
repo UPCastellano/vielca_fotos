@@ -3,69 +3,130 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const { google } = require('googleapis');
+const { OAuth2Client } = require('google-auth-library');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 // Configuración de Google Drive
-let driveClient = null;
-const DRIVE_FOLDER_ID = process.env.GOOGLE_DRIVE_FOLDER_ID;
+let drive;
+let FOLDER_ID;
+const TOKEN_PATH = path.join(__dirname, 'credentials', 'token.json');
 
-// Inicializar Google Drive
-async function initDrive() {
-  if (!DRIVE_FOLDER_ID) {
-    console.warn('⚠️  GOOGLE_DRIVE_FOLDER_ID no configurado. La app funcionará sin Google Drive.');
-    console.warn('   Configura GOOGLE_DRIVE_FOLDER_ID y GOOGLE_SERVICE_ACCOUNT para usar Drive.');
-    return;
-  }
-
+async function initGoogleDrive() {
   try {
-    // Obtener credenciales de Service Account desde variable de entorno
-    let credentials;
-    if (process.env.GOOGLE_SERVICE_ACCOUNT) {
-      // Si es un string JSON, parsearlo
-      credentials = typeof process.env.GOOGLE_SERVICE_ACCOUNT === 'string' 
-        ? JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT)
-        : process.env.GOOGLE_SERVICE_ACCOUNT;
-    } else if (process.env.GOOGLE_SERVICE_ACCOUNT_PATH) {
-      // Si es una ruta a un archivo JSON
-      const credsPath = path.resolve(process.env.GOOGLE_SERVICE_ACCOUNT_PATH);
-      credentials = JSON.parse(fs.readFileSync(credsPath, 'utf8'));
-    } else {
-      console.warn('⚠️  GOOGLE_SERVICE_ACCOUNT no configurado.');
+    FOLDER_ID = process.env.GOOGLE_DRIVE_FOLDER_ID;
+    
+    if (!FOLDER_ID) {
+      console.warn('⚠️  GOOGLE_DRIVE_FOLDER_ID no configurado. La app funcionará sin Google Drive.');
       return;
     }
 
-    // Autenticar con Service Account
-    const auth = new google.auth.GoogleAuth({
-      credentials,
-      scopes: ['https://www.googleapis.com/auth/drive'],
-    });
+    let auth;
+    let credentials;
+    let isOAuth2 = false;
 
-    driveClient = google.drive({ version: 'v3', auth });
+    // Intentar cargar Service Account desde archivo o variable de entorno
+    if (process.env.GOOGLE_SERVICE_ACCOUNT_PATH) {
+      const credPath = path.resolve(process.env.GOOGLE_SERVICE_ACCOUNT_PATH);
+      if (fs.existsSync(credPath)) {
+        credentials = JSON.parse(fs.readFileSync(credPath, 'utf8'));
+        console.log('✓ Credenciales cargadas desde archivo:', credPath);
+      }
+    } else if (process.env.GOOGLE_SERVICE_ACCOUNT) {
+      credentials = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT);
+      console.log('✓ Credenciales cargadas desde variable de entorno');
+    } else {
+      // Intentar cargar desde la carpeta credentials
+      const defaultCredPath = path.join(__dirname, 'credentials', 'client_secret.json');
+      if (fs.existsSync(defaultCredPath)) {
+        const credData = JSON.parse(fs.readFileSync(defaultCredPath, 'utf8'));
+        
+        // Si es OAuth 2.0 (tipo "web")
+        if (credData.web) {
+          isOAuth2 = true;
+          credentials = credData.web;
+          console.log('✓ Credenciales OAuth 2.0 detectadas');
+        } else if (credData.type === 'service_account') {
+          credentials = credData;
+          console.log('✓ Credenciales Service Account cargadas desde:', defaultCredPath);
+        }
+      }
+    }
 
-    // Verificar que la carpeta existe y es accesible
-    try {
-      await driveClient.files.get({
-        fileId: DRIVE_FOLDER_ID,
-        fields: 'id,name',
+    if (!credentials) {
+      console.warn('⚠️  No se encontraron credenciales de Google Drive.');
+      return;
+    }
+
+    // Manejar OAuth 2.0
+    if (isOAuth2) {
+      const oAuth2Client = new OAuth2Client(
+        credentials.client_id,
+        credentials.client_secret,
+        credentials.redirect_uris[0] || 'http://localhost:3000'
+      );
+
+      // Intentar cargar token guardado
+      let token;
+      if (fs.existsSync(TOKEN_PATH)) {
+        token = JSON.parse(fs.readFileSync(TOKEN_PATH, 'utf8'));
+        oAuth2Client.setCredentials(token);
+        console.log('✓ Token OAuth 2.0 cargado desde archivo');
+      } else {
+        console.warn('⚠️  No se encontró token OAuth 2.0.');
+        console.warn('   Ejecuta: node auth-google.js para obtener el token');
+        return;
+      }
+
+      // Verificar si el token necesita renovación
+      if (token.expiry_date && token.expiry_date <= Date.now()) {
+        try {
+          const { credentials: newToken } = await oAuth2Client.refreshAccessToken();
+          oAuth2Client.setCredentials(newToken);
+          fs.writeFileSync(TOKEN_PATH, JSON.stringify(newToken, null, 2));
+          console.log('✓ Token OAuth 2.0 renovado');
+        } catch (err) {
+          console.error('❌ Error renovando token. Ejecuta: node auth-google.js');
+          return;
+        }
+      }
+
+      auth = oAuth2Client;
+    } else if (credentials.type === 'service_account') {
+      // Manejar Service Account
+      auth = new google.auth.GoogleAuth({
+        credentials,
+        scopes: ['https://www.googleapis.com/auth/drive'],
       });
-      console.log('✅ Google Drive inicializado correctamente');
-      console.log(`   Carpeta: ${DRIVE_FOLDER_ID}`);
-      console.log('   Las fotos se guardarán en Google Drive');
+    } else {
+      console.warn('⚠️  Tipo de credenciales no reconocido.');
+      return;
+    }
+
+    drive = google.drive({ version: 'v3', auth });
+    
+    // Verificar acceso a la carpeta
+    try {
+      await drive.files.get({ fileId: FOLDER_ID });
+      console.log('✓ Google Drive configurado correctamente');
+      console.log(`✓ Carpeta ID: ${FOLDER_ID}`);
     } catch (err) {
       console.error('❌ Error accediendo a la carpeta de Drive:', err.message);
-      console.error('   Verifica que el ID de carpeta sea correcto y que la Service Account tenga acceso');
-      driveClient = null;
+      if (isOAuth2) {
+        console.error('   Verifica que tengas acceso a la carpeta o ejecuta: node auth-google.js');
+      } else {
+        console.error('   Verifica que la carpeta esté compartida con el email de la Service Account');
+      }
+      drive = null;
     }
   } catch (err) {
     console.error('❌ Error inicializando Google Drive:', err.message);
-    driveClient = null;
-    console.warn('⚠️  La app funcionará sin Drive. Las fotos se guardarán localmente.');
+    drive = null;
   }
 }
 
-// Carpeta temporal de subidas (solo para procesamiento)
+// Carpeta de subidas
 const UPLOADS_DIR = process.env.VERCEL
   ? path.join('/tmp', 'uploads')
   : path.join(__dirname, 'uploads');
@@ -73,7 +134,7 @@ if (!fs.existsSync(UPLOADS_DIR)) {
   fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 }
 
-// Multer: PNG y JPG
+// Multer: solo PNG
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     cb(null, UPLOADS_DIR);
@@ -87,6 +148,7 @@ const storage = multer.diskStorage({
 });
 
 const fileFilter = (req, file, cb) => {
+  // Aceptar PNG y JPG/JPEG
   const allowedTypes = ['image/png', 'image/jpeg', 'image/jpg'];
   if (allowedTypes.includes(file.mimetype)) {
     cb(null, true);
@@ -99,8 +161,10 @@ const upload = multer({ storage, fileFilter });
 
 // Estáticos
 app.use(express.static(path.join(__dirname, 'public')));
+app.use('/uploads', express.static(UPLOADS_DIR));
 
 // Variable para controlar si se permite subir fotos
+// Por defecto está habilitado (true), pon ENABLE_UPLOAD=false en producción
 const UPLOAD_ENABLED = process.env.ENABLE_UPLOAD !== 'false';
 
 // Ruta para verificar si la subida está habilitada
@@ -108,12 +172,20 @@ app.get('/api/upload-status', (req, res) => {
   res.json({ enabled: UPLOAD_ENABLED });
 });
 
-// Subir fotos a Google Drive
+// Subir fotos (protegido)
 app.post('/upload', upload.any(), async (req, res) => {
+  // Si la subida está deshabilitada, rechazar la petición
   if (!UPLOAD_ENABLED) {
     return res.status(403).json({
       success: false,
       message: 'La subida de fotos está deshabilitada',
+    });
+  }
+
+  if (!drive || !FOLDER_ID) {
+    return res.status(500).json({
+      success: false,
+      message: 'Google Drive no está configurado',
     });
   }
 
@@ -122,130 +194,106 @@ app.post('/upload', upload.any(), async (req, res) => {
     return res.json({ success: true, photos: [] });
   }
 
+  const uploadedPhotos = [];
+
   try {
-    if (!driveClient) {
-      return res.status(500).json({
-        success: false,
-        message: 'Google Drive no está configurado. Configura GOOGLE_DRIVE_FOLDER_ID y GOOGLE_SERVICE_ACCOUNT.',
+    for (const file of files) {
+      const fileMetadata = {
+        name: file.originalname,
+        parents: [FOLDER_ID],
+      };
+
+      const media = {
+        mimeType: file.mimetype,
+        body: fs.createReadStream(file.path),
+      };
+
+      const response = await drive.files.create({
+        requestBody: fileMetadata,
+        media: media,
+        fields: 'id, name, webViewLink, webContentLink',
       });
+
+      // Hacer el archivo público para que se pueda ver
+      await drive.permissions.create({
+        fileId: response.data.id,
+        requestBody: {
+          role: 'reader',
+          type: 'anyone',
+        },
+      });
+
+      // Obtener URL de visualización
+      const viewUrl = `https://drive.google.com/uc?export=view&id=${response.data.id}`;
+      const downloadUrl = `https://drive.google.com/uc?export=download&id=${response.data.id}`;
+
+      uploadedPhotos.push({
+        filename: response.data.name,
+        url: viewUrl,
+        downloadUrl: downloadUrl,
+        driveId: response.data.id,
+      });
+
+      // Eliminar archivo temporal
+      fs.unlinkSync(file.path);
     }
 
-    console.log(`📤 Subiendo ${files.length} foto(s) a Google Drive...`);
-    const photos = [];
-
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i];
-      const filePath = file.path;
-      const filename = path.basename(file.filename);
-      const mimeType = file.mimetype;
-
-      try {
-        // Leer el archivo
-        const fileContent = fs.readFileSync(filePath);
-
-        // Subir a Google Drive
-        const driveFile = await driveClient.files.create({
-          requestBody: {
-            name: filename,
-            parents: [DRIVE_FOLDER_ID],
-          },
-          media: {
-            mimeType: mimeType,
-            body: fileContent,
-          },
-          fields: 'id,name,webViewLink,webContentLink',
-        });
-
-        // Hacer el archivo público para que se pueda ver directamente
-        await driveClient.permissions.create({
-          fileId: driveFile.data.id,
-          requestBody: {
-            role: 'reader',
-            type: 'anyone',
-          },
-        });
-
-        // Obtener URL pública directa para la imagen
-        // Formato: https://drive.google.com/uc?export=view&id=FILE_ID
-        const imageUrl = `https://drive.google.com/uc?export=view&id=${driveFile.data.id}`;
-        const downloadUrl = `https://drive.google.com/uc?export=download&id=${driveFile.data.id}`;
-
-        photos.push({
-          filename,
-          url: imageUrl,
-          downloadUrl: downloadUrl,
-          fileId: driveFile.data.id,
-        });
-
-        console.log(`  ✓ Foto ${i + 1}/${files.length} subida a Drive: ${filename}`);
-
-        // Eliminar archivo temporal
-        if (fs.existsSync(filePath)) {
-          fs.unlinkSync(filePath);
-        }
-      } catch (err) {
-        console.error(`  ✗ Error subiendo ${filename}:`, err.message);
-        // Continuar con las siguientes fotos aunque una falle
-      }
-    }
-
-    console.log(`✅ ${photos.length} foto(s) subida(s) correctamente a Google Drive`);
-    res.json({ success: true, photos });
+    res.json({ success: true, photos: uploadedPhotos });
   } catch (err) {
-    console.error('❌ Error subiendo a Google Drive:', err.message);
+    console.error('Error subiendo a Google Drive:', err);
+    
+    // Limpiar archivos temporales en caso de error
+    files.forEach((file) => {
+      if (fs.existsSync(file.path)) {
+        fs.unlinkSync(file.path);
+      }
+    });
+
     res.status(500).json({
       success: false,
-      message: `Error subiendo las fotos: ${err.message}`,
+      message: 'Error subiendo fotos a Google Drive: ' + err.message,
     });
   }
 });
 
-// Listar fotos desde Google Drive
+// Listar fotos
 app.get('/photos', async (req, res) => {
   try {
     let photos = [];
 
-    if (driveClient && DRIVE_FOLDER_ID) {
-      try {
-        // Buscar todos los archivos de imagen en la carpeta
-        const response = await driveClient.files.list({
-          q: `'${DRIVE_FOLDER_ID}' in parents and (mimeType='image/png' or mimeType='image/jpeg' or mimeType='image/jpg')`,
-          fields: 'files(id,name,createdTime,modifiedTime)',
-          orderBy: 'createdTime desc',
-        });
-
-        photos = response.data.files.map((file) => {
-          const imageUrl = `https://drive.google.com/uc?export=view&id=${file.id}`;
-          const downloadUrl = `https://drive.google.com/uc?export=download&id=${file.id}`;
-          
-          return {
-            filename: file.name,
-            url: imageUrl,
-            downloadUrl: downloadUrl,
-            fileId: file.id,
-            created_at: file.createdTime,
-          };
-        });
-
-        console.log(`📸 ${photos.length} foto(s) encontrada(s) en Google Drive`);
-      } catch (err) {
-        console.error('Error obteniendo fotos de Drive:', err.message);
-        return res.status(500).json({
-          success: false,
-          message: `Error obteniendo fotos de Google Drive: ${err.message}`,
-        });
-      }
-    } else {
-      // Fallback: buscar en sistema de archivos local
-      const files = fs.readdirSync(UPLOADS_DIR);
-      const images = files.filter((f) => {
-        const ext = f.toLowerCase();
-        return ext.endsWith('.png') || ext.endsWith('.jpg') || ext.endsWith('.jpeg');
+    if (drive && FOLDER_ID) {
+      // Obtener fotos desde Google Drive
+      const response = await drive.files.list({
+        q: `'${FOLDER_ID}' in parents and trashed=false and (mimeType='image/png' or mimeType='image/jpeg' or mimeType='image/jpg')`,
+        fields: 'files(id, name, createdTime, webViewLink)',
+        orderBy: 'createdTime desc',
       });
-      photos = images.map((filename) => ({
-        filename,
-        url: `/uploads/${filename}`,
-      }));
+
+      photos = response.data.files.map((file) => {
+        const viewUrl = `https://drive.google.com/uc?export=view&id=${file.id}`;
+        const downloadUrl = `https://drive.google.com/uc?export=download&id=${file.id}`;
+        
+        return {
+          filename: file.name,
+          url: viewUrl,
+          downloadUrl: downloadUrl,
+          driveId: file.id,
+          created_at: file.createdTime,
+        };
+      });
+    } else {
+      // Fallback: leer desde carpeta local si Google Drive no está configurado
+      if (fs.existsSync(UPLOADS_DIR)) {
+        const files = fs.readdirSync(UPLOADS_DIR);
+        const images = files.filter((f) => {
+          const ext = f.toLowerCase();
+          return ext.endsWith('.png') || ext.endsWith('.jpg') || ext.endsWith('.jpeg');
+        });
+        photos = images.map((filename) => ({
+          filename,
+          url: `/uploads/${filename}`,
+        }));
+      }
     }
 
     res.json({ success: true, photos });
@@ -253,50 +301,56 @@ app.get('/photos', async (req, res) => {
     console.error('Error obteniendo fotos:', err);
     res.status(500).json({
       success: false,
-      message: 'Error obteniendo lista de fotos',
+      message: 'Error obteniendo lista de fotos: ' + err.message,
     });
   }
 });
 
-// Descargar foto desde Google Drive
+// Descargar foto
 app.get('/download/:filename', async (req, res) => {
   const filename = req.params.filename;
-
-  if (driveClient) {
+  
+  if (drive && FOLDER_ID) {
     try {
-      // Buscar el archivo por nombre en la carpeta
-      const response = await driveClient.files.list({
-        q: `'${DRIVE_FOLDER_ID}' in parents and name='${filename}'`,
-        fields: 'files(id,name)',
+      // Buscar archivo en Google Drive
+      const response = await drive.files.list({
+        q: `'${FOLDER_ID}' in parents and name='${filename}' and trashed=false`,
+        fields: 'files(id, name)',
       });
 
-      if (response.data.files.length > 0) {
-        const fileId = response.data.files[0].id;
-        const downloadUrl = `https://drive.google.com/uc?export=download&id=${fileId}`;
-        return res.redirect(downloadUrl);
+      if (response.data.files.length === 0) {
+        return res.status(404).send('Archivo no encontrado en Google Drive');
       }
+
+      const fileId = response.data.files[0].id;
+      const downloadUrl = `https://drive.google.com/uc?export=download&id=${fileId}`;
+      
+      // Redirigir a la URL de descarga de Google Drive
+      res.redirect(downloadUrl);
     } catch (err) {
-      console.error('Error obteniendo archivo de Drive:', err);
+      console.error('Error descargando desde Google Drive:', err);
+      res.status(500).send('Error descargando archivo');
     }
+  } else {
+    // Fallback: descargar desde carpeta local
+    const filePath = path.join(UPLOADS_DIR, filename);
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).send('Archivo no encontrado');
+    }
+    res.download(filePath);
   }
-
-  // Fallback: buscar en sistema de archivos local
-  const filePath = path.join(UPLOADS_DIR, filename);
-  if (fs.existsSync(filePath)) {
-    return res.download(filePath);
-  }
-
-  return res.status(404).send('Archivo no encontrado');
 });
 
 // Inicio local
 if (!process.env.VERCEL) {
   app.listen(PORT, async () => {
     console.log(`Servidor escuchando en el puerto ${PORT}`);
-    await initDrive();
+    await initGoogleDrive();
   });
 } else {
-  initDrive();
+  initGoogleDrive();
 }
 
 module.exports = app;
+
+

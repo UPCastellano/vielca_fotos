@@ -11,4 +11,7 @@ uploads/
 service-account*.json
 credentials.json
 google-credentials.json
+client_secret*.json
+credentials/token.json
+credentials/
 

@@ -11,10 +11,11 @@ Write-Host "Configurando Google Drive..." -ForegroundColor Yellow
 
 # IMPORTANTE: Configura estos valores antes de ejecutar
 # 1. ID de la carpeta de Google Drive (obtener de la URL de la carpeta)
-$env:GOOGLE_DRIVE_FOLDER_ID="TU_ID_DE_CARPETA_AQUI"
+$env:GOOGLE_DRIVE_FOLDER_ID="1TWcA0VPWKZFwmcS8jgOB-MazNgfX1SCb"
 
 # 2. Ruta al archivo JSON de Service Account descargado de Google Cloud
-$env:GOOGLE_SERVICE_ACCOUNT_PATH="C:\ruta\al\service-account.json"
+# Si no se especifica, intentará usar credentials/client_secret.json
+$env:GOOGLE_SERVICE_ACCOUNT_PATH="credentials\client_secret.json"
 
 # Habilitar subida
 $env:ENABLE_UPLOAD="true"
@@ -24,9 +25,9 @@ $env:PORT="3000"
 
 Write-Host "✓ Variables configuradas" -ForegroundColor Green
 Write-Host ""
-Write-Host "⚠️  IMPORTANTE: Edita este script y configura:" -ForegroundColor Yellow
-Write-Host "   - GOOGLE_DRIVE_FOLDER_ID" -ForegroundColor Yellow
-Write-Host "   - GOOGLE_SERVICE_ACCOUNT_PATH" -ForegroundColor Yellow
+Write-Host "⚠️  IMPORTANTE: Si es la primera vez, ejecuta:" -ForegroundColor Yellow
+Write-Host "   node auth-google.js" -ForegroundColor Cyan
+Write-Host "   para obtener el token de acceso OAuth 2.0" -ForegroundColor Yellow
 Write-Host ""
 Write-Host "Iniciando servidor..." -ForegroundColor Yellow
 Write-Host "═══════════════════════════════════════════════════════" -ForegroundColor Gray

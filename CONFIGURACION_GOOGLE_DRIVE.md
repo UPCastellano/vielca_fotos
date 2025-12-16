@@ -87,3 +87,4 @@ npm start
 ✅ **Gratis**: Sin costos adicionales  
 ✅ **Simple**: No requiere base de datos
 
+
