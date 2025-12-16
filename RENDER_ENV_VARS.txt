@@ -1,0 +1,41 @@
+═══════════════════════════════════════════════════════
+  VARIABLES DE ENTORNO PARA RENDER
+═══════════════════════════════════════════════════════
+
+1. GOOGLE_DRIVE_FOLDER_ID
+   Valor: 1TWcA0VPWKZFwmcS8jgOB-MazNgfX1SCb
+   
+2. GOOGLE_SERVICE_ACCOUNT
+   Valor (pega esto como una sola línea, sin saltos):
+   {"web":{"client_id":"62237646464-7d996nrv0s5j6b1mb38q9aj4hmtudacu.apps.googleusercontent.com","project_id":"vielcafotos","auth_uri":"https://accounts.google.com/o/oauth2/auth","token_uri":"https://oauth2.googleapis.com/token","auth_provider_x509_cert_url":"https://www.googleapis.com/oauth2/v1/certs","client_secret":"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","redirect_uris":["http://localhost:3000"]}}
+
+3. GOOGLE_DRIVE_TOKEN
+   Para obtener el valor:
+   1. Ejecuta localmente: node auth-google.js
+   2. Abre credentials/token.json
+   3. Copia TODO el contenido (debe ser una sola línea JSON)
+   4. Pégalo como valor de esta variable
+   
+   Ejemplo de formato:
+   {"access_token":"ya29.a0AfH6SMC...","refresh_token":"1//0g...","scope":"https://www.googleapis.com/auth/drive","token_type":"Bearer","expiry_date":1234567890}
+
+4. ENABLE_UPLOAD (Opcional)
+   Valor: false
+   Descripción: Deshabilita la subida de fotos en producción
+
+═══════════════════════════════════════════════════════
+  INSTRUCCIONES RÁPIDAS EN RENDER
+═══════════════════════════════════════════════════════
+
+1. Ve a https://dashboard.render.com
+2. New + → Web Service
+3. Conecta tu repositorio
+4. Configuración:
+   - Build Command: npm install
+   - Start Command: node server.js
+5. En Environment Variables, agrega las 3 variables arriba
+6. Create Web Service
+7. Espera a que termine el despliegue
+
+═══════════════════════════════════════════════════════
+
