@@ -520,14 +520,11 @@ app.use((req, res, next) => {
   }
 });
 
-// Inicio local
-if (!process.env.VERCEL && !process.env.RENDER) {
-  app.listen(PORT, async () => {
-    console.log(`Servidor escuchando en el puerto ${PORT}`);
-    await initGoogleDrive();
-  });
-} else {
-  initGoogleDrive();
-}
+// Iniciar servidor
+// En Render y Vercel, el servidor debe escuchar siempre
+app.listen(PORT, async () => {
+  console.log(`Servidor escuchando en el puerto ${PORT}`);
+  await initGoogleDrive();
+});
 
 module.exports = app;
