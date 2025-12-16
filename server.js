@@ -504,14 +504,19 @@ app.use(express.static(path.join(__dirname, 'public'), {
 app.use('/uploads', express.static(UPLOADS_DIR));
 
 // Ruta catch-all para SPA - debe ir al final
-app.get('*', (req, res) => {
-  // Si no es una ruta de API, servir index.html
-  if (!req.path.startsWith('/api') && !req.path.startsWith('/photos') && 
-      !req.path.startsWith('/upload') && !req.path.startsWith('/download') &&
-      !req.path.startsWith('/image')) {
+// Express 5 requiere usar app.use() en lugar de app.get('*')
+app.use((req, res, next) => {
+  // Si no es una ruta de API o archivo estático, servir index.html
+  if (!req.path.startsWith('/api') && 
+      !req.path.startsWith('/photos') && 
+      !req.path.startsWith('/upload') && 
+      !req.path.startsWith('/download') &&
+      !req.path.startsWith('/image') &&
+      !req.path.startsWith('/uploads') &&
+      !req.path.includes('.')) { // No es un archivo (no tiene extensión)
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
   } else {
-    res.status(404).send('Not found');
+    next(); // Continuar con el siguiente middleware o 404
   }
 });
 
