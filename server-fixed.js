@@ -150,7 +150,23 @@ app.get('/photos', async (req, res) => {
       const [rows] = await pool.query(
         'SELECT filename, url, created_at FROM photos ORDER BY created_at DESC'
       );
-      photos = rows;
+      // Si las URLs son externas (http/https), usarlas directamente
+      // Si son locales (/uploads/...), verificar si el archivo existe
+      photos = rows.map((photo) => {
+        // Si la URL ya es externa, mantenerla
+        if (photo.url.startsWith('http://') || photo.url.startsWith('https://')) {
+          return photo;
+        }
+        
+        // Si es local, verificar si existe el archivo
+        const filePath = path.join(UPLOADS_DIR, photo.filename);
+        if (fs.existsSync(filePath)) {
+          return photo; // Mantener URL local si existe
+        }
+        
+        // Si no existe localmente, devolver la URL tal cual (puede ser externa o rota)
+        return photo;
+      });
     } else {
       const files = fs.readdirSync(UPLOADS_DIR);
       // Aceptar PNG, JPG y JPEG
@@ -175,13 +191,46 @@ app.get('/photos', async (req, res) => {
 });
 
 // Descargar foto
-app.get('/download/:filename', (req, res) => {
+app.get('/download/:filename', async (req, res) => {
   const filename = req.params.filename;
-  const filePath = path.join(UPLOADS_DIR, filename);
-  if (!fs.existsSync(filePath)) {
-    return res.status(404).send('Archivo no encontrado');
+  
+  // Si tenemos MySQL, buscar la URL completa de la foto
+  if (pool) {
+    try {
+      const [rows] = await pool.query(
+        'SELECT url FROM photos WHERE filename = ?',
+        [filename]
+      );
+      
+      if (rows.length > 0) {
+        const photoUrl = rows[0].url;
+        
+        // Si la URL es externa (http/https), redirigir
+        if (photoUrl.startsWith('http://') || photoUrl.startsWith('https://')) {
+          return res.redirect(photoUrl);
+        }
+        
+        // Si es una URL local, intentar servirla
+        const filePath = path.join(UPLOADS_DIR, filename);
+        if (fs.existsSync(filePath)) {
+          return res.download(filePath);
+        }
+        
+        // Si no existe el archivo local, devolver error
+        return res.status(404).send('Archivo no encontrado. La foto puede estar en un servicio externo.');
+      }
+    } catch (err) {
+      console.error('Error obteniendo foto de BD:', err);
+    }
   }
-  res.download(filePath);
+  
+  // Fallback: buscar en sistema de archivos
+  const filePath = path.join(UPLOADS_DIR, filename);
+  if (fs.existsSync(filePath)) {
+    return res.download(filePath);
+  }
+  
+  return res.status(404).send('Archivo no encontrado');
 });
 
 // Inicio local
