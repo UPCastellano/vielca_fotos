@@ -123,17 +123,37 @@ app.post('/upload', upload.any(), async (req, res) => {
     return res.json({ success: true, photos: [] });
   }
 
-  const photos = files.map((file) => ({
-    filename: path.basename(file.filename),
-    url: `/uploads/${file.filename}`,
-  }));
-
   try {
     if (pool) {
-      const values = photos.map((p) => [p.filename, p.url]);
-      await pool.query('INSERT INTO photos (filename, url) VALUES ?', [values]);
+      // Guardar cada foto en MySQL como BLOB
+      const photos = [];
+      for (const file of files) {
+        const imageData = fs.readFileSync(file.path);
+        const filename = path.basename(file.filename);
+        const url = `/api/photo/${filename}`; // URL para servir desde MySQL
+        
+        await pool.query(
+          'INSERT INTO photos (filename, url, image_data, mime_type) VALUES (?, ?, ?, ?)',
+          [filename, url, imageData, file.mimetype]
+        );
+        
+        photos.push({ filename, url });
+        
+        // Eliminar archivo temporal después de guardarlo en BD
+        if (fs.existsSync(file.path)) {
+          fs.unlinkSync(file.path);
+        }
+      }
+      
+      res.json({ success: true, photos });
+    } else {
+      // Fallback sin BD
+      const photos = files.map((file) => ({
+        filename: path.basename(file.filename),
+        url: `/uploads/${file.filename}`,
+      }));
+      res.json({ success: true, photos });
     }
-    res.json({ success: true, photos });
   } catch (err) {
     console.error('Error guardando en MySQL:', err);
     res.status(500).json({
