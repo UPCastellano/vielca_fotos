@@ -5,7 +5,6 @@
 
 const fs = require('fs');
 const path = require('path');
-const readline = require('readline');
 const { google } = require('googleapis');
 
 // Rutas de archivos
@@ -35,42 +34,142 @@ function loadCredentials() {
 
 /**
  * Obtiene y almacena el token después de que el usuario autoriza la aplicación
+ * Usa un servidor HTTP temporal para capturar el código automáticamente
  */
-async function getAccessToken(oAuth2Client) {
+async function getAccessToken(oAuth2Client, redirectUri) {
   return new Promise((resolve, reject) => {
+    const http = require('http');
+    const url = require('url');
+    
     const authUrl = oAuth2Client.generateAuthUrl({
       access_type: 'offline',
       scope: SCOPES,
+      prompt: 'consent', // Forzar consentimiento para obtener refresh token
+      redirect_uri: redirectUri, // Usar el redirect_uri exacto de las credenciales
     });
 
     console.log('\n═══════════════════════════════════════════════════════');
     console.log('  Autorización de Google Drive');
     console.log('═══════════════════════════════════════════════════════\n');
-    console.log('Autoriza esta aplicación visitando esta URL:');
-    console.log('\n' + authUrl + '\n');
+    console.log('Redirect URI configurado:', redirectUri);
+    console.log('\n⚠️  IMPORTANTE: Asegúrate de que este Redirect URI esté');
+    console.log('   configurado en Google Cloud Console:');
+    console.log('   https://console.cloud.google.com/apis/credentials\n');
+    console.log('1. Se abrirá tu navegador automáticamente...');
+    console.log('2. Inicia sesión con tu cuenta de Google');
+    console.log('3. Haz clic en "Permitir" para dar acceso\n');
 
-    const rl = readline.createInterface({
-      input: process.stdin,
-      output: process.stdout,
+    // Crear servidor HTTP temporal para capturar el código
+    const server = http.createServer(async (req, res) => {
+      try {
+        const queryObject = url.parse(req.url, true).query;
+        
+        if (queryObject.code) {
+          const code = queryObject.code;
+          
+          // Obtener el token
+          const { tokens } = await oAuth2Client.getToken(code);
+          oAuth2Client.setCredentials(tokens);
+
+          // Almacenar el token
+          fs.writeFileSync(TOKEN_PATH, JSON.stringify(tokens, null, 2));
+          
+          // Responder al navegador
+          res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+          res.end(`
+            <html>
+              <head>
+                <title>Autorización Exitosa</title>
+                <style>
+                  body {
+                    font-family: Arial, sans-serif;
+                    display: flex;
+                    justify-content: center;
+                    align-items: center;
+                    height: 100vh;
+                    margin: 0;
+                    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                  }
+                  .container {
+                    background: white;
+                    padding: 40px;
+                    border-radius: 10px;
+                    box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+                    text-align: center;
+                  }
+                  h1 { color: #4CAF50; }
+                  p { color: #666; }
+                </style>
+              </head>
+              <body>
+                <div class="container">
+                  <h1>✓ ¡Autorización Exitosa!</h1>
+                  <p>Puedes cerrar esta ventana y volver a la consola.</p>
+                  <p>El token se ha guardado correctamente.</p>
+                </div>
+              </body>
+            </html>
+          `);
+          
+          server.close();
+          console.log('\n✓ Token almacenado en:', TOKEN_PATH);
+          console.log('✓ ¡Autenticación completada!\n');
+          resolve(tokens);
+        } else if (queryObject.error) {
+          res.writeHead(400, { 'Content-Type': 'text/html; charset=utf-8' });
+          res.end(`
+            <html>
+              <head><title>Error de Autorización</title></head>
+              <body>
+                <h1>Error: ${queryObject.error}</h1>
+                <p>${queryObject.error_description || ''}</p>
+              </body>
+            </html>
+          `);
+          server.close();
+          reject(new Error(queryObject.error_description || queryObject.error));
+        } else {
+          res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+          res.end('<html><body><h1>Esperando autorización...</h1></body></html>');
+        }
+      } catch (err) {
+        server.close();
+        reject(err);
+      }
     });
 
-    rl.question('Ingresa el código de autorización de la URL: ', (code) => {
-      rl.close();
-
-      oAuth2Client.getToken(code, (err, token) => {
+    // Escuchar en el puerto 3000
+    server.listen(3000, () => {
+      console.log('✓ Servidor temporal iniciado en http://localhost:3000');
+      console.log('\nAbriendo navegador...\n');
+      
+      // Abrir el navegador automáticamente
+      const { exec } = require('child_process');
+      const platform = process.platform;
+      let command;
+      
+      if (platform === 'win32') {
+        command = `start "" "${authUrl}"`;
+      } else if (platform === 'darwin') {
+        command = `open "${authUrl}"`;
+      } else {
+        command = `xdg-open "${authUrl}"`;
+      }
+      
+      exec(command, (err) => {
         if (err) {
-          console.error('❌ Error al obtener el token:', err.message);
-          reject(err);
-          return;
+          console.log('⚠️  No se pudo abrir el navegador automáticamente.');
+          console.log('   Por favor, abre esta URL manualmente:');
+          console.log('\n' + authUrl + '\n');
         }
-
-        // Almacenar el token
-        fs.writeFileSync(TOKEN_PATH, JSON.stringify(token, null, 2));
-        console.log('\n✓ Token almacenado en:', TOKEN_PATH);
-        console.log('✓ ¡Autenticación completada!\n');
-        resolve(token);
       });
     });
+
+    // Timeout después de 5 minutos
+    setTimeout(() => {
+      server.close();
+      reject(new Error('Tiempo de espera agotado. Por favor, intenta de nuevo.'));
+    }, 300000);
   });
 }
 
@@ -83,10 +182,11 @@ async function authenticate() {
     const credentials = loadCredentials();
 
     const { OAuth2Client } = require('google-auth-library');
+    const redirectUri = credentials.redirect_uris[0] || 'http://localhost:3000';
     const oAuth2Client = new OAuth2Client(
       credentials.client_id,
       credentials.client_secret,
-      credentials.redirect_uris[0] || 'http://localhost:3000'
+      redirectUri
     );
 
     // Verificar si ya existe un token
@@ -106,7 +206,7 @@ async function authenticate() {
     }
 
     // Obtener nuevo token
-    await getAccessToken(oAuth2Client);
+    await getAccessToken(oAuth2Client, redirectUri);
   } catch (error) {
     console.error('❌ Error:', error.message);
     process.exit(1);
