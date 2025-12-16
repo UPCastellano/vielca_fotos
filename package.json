@@ -1,0 +1,21 @@
+{
+  "name": "visualizadorfotos",
+  "version": "1.0.0",
+  "description": "",
+  "main": "server-fixed.js",
+  "scripts": {
+    "start": "node server-fixed.js",
+    "dev": "node server-fixed.js"
+  },
+  "engines": {
+    "node": ">=18.x"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "express": "^5.2.1",
+    "multer": "^2.0.2",
+    "mysql2": "^3.15.3"
+  }
+}
