@@ -49,9 +49,7 @@ async function initDb() {
       CREATE TABLE IF NOT EXISTS photos (
         id INT AUTO_INCREMENT PRIMARY KEY,
         filename VARCHAR(255) NOT NULL,
-        url VARCHAR(512),
-        image_data LONGBLOB,
-        mime_type VARCHAR(50),
+        url VARCHAR(512) NOT NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
@@ -71,7 +69,7 @@ if (!fs.existsSync(UPLOADS_DIR)) {
   fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 }
 
-// Multer: PNG y JPG
+// Multer: solo PNG
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     cb(null, UPLOADS_DIR);
@@ -123,70 +121,23 @@ app.post('/upload', upload.any(), async (req, res) => {
     return res.json({ success: true, photos: [] });
   }
 
+  const photos = files.map((file) => ({
+    filename: path.basename(file.filename),
+    url: `/uploads/${file.filename}`,
+  }));
+
   try {
     if (pool) {
-      // Guardar cada foto en MySQL como BLOB
-      const photos = [];
-      for (const file of files) {
-        const imageData = fs.readFileSync(file.path);
-        const filename = path.basename(file.filename);
-        const url = `/api/photo/${filename}`; // URL para servir desde MySQL
-        
-        await pool.query(
-          'INSERT INTO photos (filename, url, image_data, mime_type) VALUES (?, ?, ?, ?)',
-          [filename, url, imageData, file.mimetype]
-        );
-        
-        photos.push({ filename, url });
-        
-        // Eliminar archivo temporal después de guardarlo en BD
-        if (fs.existsSync(file.path)) {
-          fs.unlinkSync(file.path);
-        }
-      }
-      
-      res.json({ success: true, photos });
-    } else {
-      // Fallback sin BD
-      const photos = files.map((file) => ({
-        filename: path.basename(file.filename),
-        url: `/uploads/${file.filename}`,
-      }));
-      res.json({ success: true, photos });
+      const values = photos.map((p) => [p.filename, p.url]);
+      await pool.query('INSERT INTO photos (filename, url) VALUES ?', [values]);
     }
+    res.json({ success: true, photos });
   } catch (err) {
     console.error('Error guardando en MySQL:', err);
     res.status(500).json({
       success: false,
       message: 'Error guardando la información de las fotos',
     });
-  }
-});
-
-// Ruta para servir fotos desde MySQL
-app.get('/api/photo/:filename', async (req, res) => {
-  const filename = req.params.filename;
-  
-  if (!pool) {
-    return res.status(404).send('Base de datos no disponible');
-  }
-  
-  try {
-    const [rows] = await pool.query(
-      'SELECT image_data, mime_type FROM photos WHERE filename = ?',
-      [filename]
-    );
-    
-    if (rows.length === 0) {
-      return res.status(404).send('Foto no encontrada');
-    }
-    
-    const photo = rows[0];
-    res.set('Content-Type', photo.mime_type || 'image/jpeg');
-    res.send(photo.image_data);
-  } catch (err) {
-    console.error('Error obteniendo foto de BD:', err);
-    res.status(500).send('Error obteniendo foto');
   }
 });
 
@@ -199,34 +150,7 @@ app.get('/photos', async (req, res) => {
       const [rows] = await pool.query(
         'SELECT filename, url, created_at FROM photos ORDER BY created_at DESC'
       );
-      // Si las URLs son externas (http/https), usarlas directamente
-      // Si son de MySQL (/api/photo/...), mantenerlas
-      photos = rows.map((photo) => {
-        // Si la URL ya es externa, mantenerla
-        if (photo.url && (photo.url.startsWith('http://') || photo.url.startsWith('https://'))) {
-          return photo;
-        }
-        
-        // Si es de MySQL o no tiene URL, usar la ruta de API
-        if (!photo.url || photo.url.startsWith('/api/photo/')) {
-          return {
-            ...photo,
-            url: photo.url || `/api/photo/${photo.filename}`
-          };
-        }
-        
-        // Si es local, verificar si existe el archivo
-        const filePath = path.join(UPLOADS_DIR, photo.filename);
-        if (fs.existsSync(filePath)) {
-          return photo; // Mantener URL local si existe
-        }
-        
-        // Si no existe localmente, usar la ruta de API de MySQL
-        return {
-          ...photo,
-          url: `/api/photo/${photo.filename}`
-        };
-      });
+      photos = rows;
     } else {
       const files = fs.readdirSync(UPLOADS_DIR);
       // Aceptar PNG, JPG y JPEG
@@ -251,44 +175,13 @@ app.get('/photos', async (req, res) => {
 });
 
 // Descargar foto
-app.get('/download/:filename', async (req, res) => {
+app.get('/download/:filename', (req, res) => {
   const filename = req.params.filename;
-  
-  // Si tenemos MySQL, buscar la foto en la BD
-  if (pool) {
-    try {
-      const [rows] = await pool.query(
-        'SELECT image_data, mime_type, url FROM photos WHERE filename = ?',
-        [filename]
-      );
-      
-      if (rows.length > 0) {
-        const photo = rows[0];
-        
-        // Si tiene image_data en MySQL, servirla directamente
-        if (photo.image_data) {
-          res.set('Content-Type', photo.mime_type || 'image/jpeg');
-          res.set('Content-Disposition', `attachment; filename="${filename}"`);
-          return res.send(photo.image_data);
-        }
-        
-        // Si la URL es externa (http/https), redirigir
-        if (photo.url && (photo.url.startsWith('http://') || photo.url.startsWith('https://'))) {
-          return res.redirect(photo.url);
-        }
-      }
-    } catch (err) {
-      console.error('Error obteniendo foto de BD:', err);
-    }
-  }
-  
-  // Fallback: buscar en sistema de archivos
   const filePath = path.join(UPLOADS_DIR, filename);
-  if (fs.existsSync(filePath)) {
-    return res.download(filePath);
+  if (!fs.existsSync(filePath)) {
+    return res.status(404).send('Archivo no encontrado');
   }
-  
-  return res.status(404).send('Archivo no encontrado');
+  res.download(filePath);
 });
 
 // Inicio local
@@ -302,3 +195,5 @@ if (!process.env.VERCEL) {
 }
 
 module.exports = app;
+
+

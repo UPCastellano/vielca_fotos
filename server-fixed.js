@@ -33,9 +33,14 @@ let pool;
 
 async function initDb() {
   if (!dbConfig.host && !dbConfig.socketPath && !dbConfig.database) {
-    console.warn('Variables de entorno de MySQL no configuradas. La app funcionará sin BD.');
+    console.warn('⚠️  Variables de entorno de MySQL no configuradas. La app funcionará sin BD.');
+    console.warn('   Para usar MySQL, configura: DB_HOST, DB_USER, DB_PASSWORD, DB_NAME');
     return;
   }
+
+  console.log('🔌 Intentando conectar a MySQL...');
+  console.log(`   Host: ${dbConfig.host || 'socket'}`);
+  console.log(`   Database: ${dbConfig.database}`);
 
   try {
     pool = mysql.createPool({
@@ -45,6 +50,9 @@ async function initDb() {
       queueLimit: 0,
     });
 
+    // Probar la conexión
+    await pool.query('SELECT 1');
+    
     await pool.query(`
       CREATE TABLE IF NOT EXISTS photos (
         id INT AUTO_INCREMENT PRIMARY KEY,
@@ -56,10 +64,13 @@ async function initDb() {
       )
     `);
 
-    console.log('Base de datos MySQL inicializada correctamente');
+    console.log('✅ Base de datos MySQL inicializada correctamente');
+    console.log('   Las fotos se guardarán directamente en MySQL');
   } catch (err) {
-    console.error('Error inicializando MySQL:', err.message);
+    console.error('❌ Error inicializando MySQL:', err.message);
+    console.error('   Detalles:', err.code);
     pool = null;
+    console.warn('⚠️  La app funcionará sin BD. Las fotos se guardarán localmente.');
   }
 }
 
@@ -124,41 +135,50 @@ app.post('/upload', upload.any(), async (req, res) => {
   }
 
   try {
-    if (pool) {
-      // Guardar cada foto en MySQL como BLOB
-      const photos = [];
-      for (const file of files) {
-        const imageData = fs.readFileSync(file.path);
-        const filename = path.basename(file.filename);
-        const url = `/api/photo/${filename}`; // URL para servir desde MySQL
-        
+    if (!pool) {
+      // Si no hay conexión a MySQL, rechazar la subida
+      return res.status(500).json({
+        success: false,
+        message: 'No hay conexión a MySQL. Configura las variables de entorno DB_HOST, DB_USER, DB_PASSWORD, DB_NAME antes de iniciar el servidor.',
+      });
+    }
+
+    // Guardar cada foto en MySQL como BLOB
+    console.log(`📤 Subiendo ${files.length} foto(s) a MySQL...`);
+    const photos = [];
+    
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      const imageData = fs.readFileSync(file.path);
+      const filename = path.basename(file.filename);
+      const url = `/api/photo/${filename}`; // URL para servir desde MySQL
+      
+      try {
         await pool.query(
           'INSERT INTO photos (filename, url, image_data, mime_type) VALUES (?, ?, ?, ?)',
           [filename, url, imageData, file.mimetype]
         );
         
         photos.push({ filename, url });
+        console.log(`  ✓ Foto ${i + 1}/${files.length} guardada en MySQL: ${filename}`);
         
         // Eliminar archivo temporal después de guardarlo en BD
         if (fs.existsSync(file.path)) {
           fs.unlinkSync(file.path);
         }
+      } catch (dbErr) {
+        console.error(`  ✗ Error guardando ${filename}:`, dbErr.message);
+        throw dbErr;
       }
-      
-      res.json({ success: true, photos });
-    } else {
-      // Fallback sin BD
-      const photos = files.map((file) => ({
-        filename: path.basename(file.filename),
-        url: `/uploads/${file.filename}`,
-      }));
-      res.json({ success: true, photos });
     }
+    
+    console.log(`✅ ${photos.length} foto(s) subida(s) correctamente a MySQL`);
+    res.json({ success: true, photos });
   } catch (err) {
-    console.error('Error guardando en MySQL:', err);
+    console.error('❌ Error guardando en MySQL:', err.message);
     res.status(500).json({
       success: false,
-      message: 'Error guardando la información de las fotos',
+      message: `Error guardando las fotos en MySQL: ${err.message}`,
     });
   }
 });
