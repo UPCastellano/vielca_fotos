@@ -1,28 +1,26 @@
-# Script completo: Configura MySQL y inicia el servidor
-# Ejecuta este script para todo en uno
+# Script para configurar y ejecutar el servidor local
+# Conecta a Clever Cloud MySQL
 
 Write-Host "═══════════════════════════════════════════════════════" -ForegroundColor Gray
-Write-Host "  Configurando Visualizador de Fotos - Vielca" -ForegroundColor White
+Write-Host "  Visualizador de Fotos - Vielca Ingenieros 10 Años" -ForegroundColor White
 Write-Host "═══════════════════════════════════════════════════════" -ForegroundColor Gray
 Write-Host ""
 
-# Configurar variables de entorno para MySQL de Clever Cloud
+# Variables de entorno de Clever Cloud MySQL
 Write-Host "Configurando MySQL de Clever Cloud..." -ForegroundColor Yellow
-$env:DB_HOST="bgdoaasgoznr2hmdj24v-mysql.services.clever-cloud.com"
-$env:DB_PORT="3306"
-$env:DB_USER="uht4tll0gf9lyffl"
-$env:DB_PASSWORD="5hi8TfIe8tqGsWIxOvIb"
-$env:DB_NAME="bgdoaasgoznr2hmdj24v"
+$env:MYSQL_ADDON_HOST="b3nk42c7ffxjml0xmqrv-mysql.services.clever-cloud.com"
+$env:MYSQL_ADDON_PORT="3306"
+$env:MYSQL_ADDON_USER="umnkr3fewyhygios"
+$env:MYSQL_ADDON_PASSWORD="bTeExcydXtflZIFBKpmC"
+$env:MYSQL_ADDON_DB="b3nk42c7ffxjml0xmqrv"
 $env:ENABLE_UPLOAD="true"
 $env:PORT="3000"
 
 Write-Host "✓ Variables configuradas" -ForegroundColor Green
 Write-Host ""
 Write-Host "Iniciando servidor..." -ForegroundColor Yellow
-Write-Host ""
 Write-Host "═══════════════════════════════════════════════════════" -ForegroundColor Gray
 Write-Host ""
 
-# Iniciar el servidor
 npm start
 

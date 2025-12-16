@@ -2,10 +2,10 @@
   "name": "visualizadorfotos",
   "version": "1.0.0",
   "description": "",
-  "main": "server-fixed.js",
+  "main": "server.js",
   "scripts": {
-    "start": "node server-fixed.js",
-    "dev": "node server-fixed.js"
+    "start": "node server.js",
+    "dev": "node server.js"
   },
   "engines": {
     "node": ">=18.x"

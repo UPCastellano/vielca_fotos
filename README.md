@@ -1,133 +1,149 @@
 # Visualizador de Fotos - Vielca Ingenieros 10 Años
 
-Aplicación web para visualizar y descargar fotos PNG en celebración del 10º aniversario de Vielca Ingenieros.
+Aplicación web para visualizar y descargar fotos PNG/JPG en celebración del 10º aniversario de Vielca Ingenieros.
 
 ## Características
 
-- ✅ Subida de múltiples fotos PNG
+- ✅ Subida de múltiples fotos PNG/JPG en lote
 - ✅ Galería visual moderna y responsive
 - ✅ Descarga individual de fotos
-- ✅ Almacenamiento en MySQL
+- ✅ Almacenamiento permanente en MySQL (Clever Cloud)
+- ✅ Las fotos se guardan como BLOB en MySQL
 - ✅ Despliegue en Vercel
 
 ## Instalación Local
 
-1. Clona el repositorio
-2. Instala las dependencias:
+### Opción 1: Script Automático (Recomendado)
+
+```powershell
+.\setup-local.ps1
+```
+
+### Opción 2: Manual
+
+1. **Instala las dependencias:**
 ```bash
 npm install
 ```
 
-3. Configura las variables de entorno:
-   - Copia `.env.example` a `.env`
-   - Completa con tus credenciales de MySQL
+2. **Configura las variables de entorno** (PowerShell):
+```powershell
+$env:MYSQL_ADDON_HOST="b3nk42c7ffxjml0xmqrv-mysql.services.clever-cloud.com"
+$env:MYSQL_ADDON_PORT="3306"
+$env:MYSQL_ADDON_USER="umnkr3fewyhygios"
+$env:MYSQL_ADDON_PASSWORD="bTeExcydXtflZIFBKpmC"
+$env:MYSQL_ADDON_DB="b3nk42c7ffxjml0xmqrv"
+$env:ENABLE_UPLOAD="true"
+$env:PORT="3000"
+```
 
-4. Inicia el servidor:
+3. **Inicia el servidor:**
 ```bash
 npm start
 ```
 
-5. Abre `http://localhost:3000` en tu navegador
+4. **Abre** `http://localhost:3000` en tu navegador
+
+## Configuración de Base de Datos
+
+### Crear la Tabla en MySQL
+
+Ejecuta el script `setup.sql` en tu cliente MySQL (MySQL Workbench, phpMyAdmin):
+
+**Credenciales de Clever Cloud:**
+- Host: `b3nk42c7ffxjml0xmqrv-mysql.services.clever-cloud.com`
+- Port: `3306`
+- User: `umnkr3fewyhygios`
+- Password: `bTeExcydXtflZIFBKpmC`
+- Database: `b3nk42c7ffxjml0xmqrv`
+
+El script creará automáticamente la tabla `photos` con todas las columnas necesarias.
 
 ## Despliegue en Vercel
 
-### Paso 1: Preparar el proyecto
+### Paso 1: Conectar Repositorio
 
-Asegúrate de tener todos los archivos en Git:
-```bash
-git add .
-git commit -m "Preparado para Vercel"
+Conecta tu repositorio Git con Vercel desde [vercel.com](https://vercel.com)
+
+### Paso 2: Configurar Variables de Entorno
+
+En Vercel → Settings → Environment Variables, añade:
+
+**Variables de Clever Cloud MySQL:**
+```
+MYSQL_ADDON_HOST = b3nk42c7ffxjml0xmqrv-mysql.services.clever-cloud.com
+MYSQL_ADDON_PORT = 3306
+MYSQL_ADDON_USER = umnkr3fewyhygios
+MYSQL_ADDON_PASSWORD = bTeExcydXtflZIFBKpmC
+MYSQL_ADDON_DB = b3nk42c7ffxjml0xmqrv
 ```
 
-### Paso 2: Conectar con Vercel
-
-1. Instala Vercel CLI (opcional):
-```bash
-npm i -g vercel
+**Control de subida:**
 ```
-
-2. O conecta tu repositorio desde [vercel.com](https://vercel.com)
-
-### Paso 3: Configurar Variables de Entorno en Vercel
-
-En el dashboard de Vercel, ve a tu proyecto → Settings → Environment Variables y añade:
-
-**Variables de MySQL:**
-- `DB_HOST` = tu-host-mysql (ej: bgdoaasgoznr2hmdj24v-mysql.services.clever-cloud.com)
-- `DB_PORT` = 3306
-- `DB_USER` = tu-usuario-mysql
-- `DB_PASSWORD` = tu-contraseña-mysql
-- `DB_NAME` = tu-base-de-datos
-
-**Control de subida de fotos:**
-- `ENABLE_UPLOAD` = `false` (para deshabilitar la subida en producción, solo visualización y descarga)
-  - Si no pones esta variable, la subida estará habilitada por defecto
-  - En producción normalmente querrás ponerla a `false` para que solo se puedan ver y descargar fotos
-
-### Paso 4: Desplegar
-
-Si usas CLI:
-```bash
-vercel --prod
+ENABLE_UPLOAD = false
 ```
+(Pon `false` en producción para deshabilitar la subida, solo visualización y descarga)
 
-O simplemente haz push a tu repositorio conectado y Vercel desplegará automáticamente.
+### Paso 3: Desplegar
+
+Vercel detectará automáticamente el proyecto y lo desplegará. O haz push a tu repositorio.
 
 ## Estructura del Proyecto
 
 ```
 VisualizadorFotos/
-├── server.js          # Servidor Express principal
-├── vercel.json        # Configuración de Vercel
-├── package.json       # Dependencias Node.js
-├── public/            # Archivos estáticos
-│   ├── index.html     # Página principal
-│   ├── styles.css     # Estilos
-│   └── app.js         # JavaScript del frontend
-├── uploads/           # Fotos subidas (solo local)
-└── .env.example       # Ejemplo de variables de entorno
+├── server.js              # Servidor Express principal
+├── vercel.json            # Configuración de Vercel
+├── package.json           # Dependencias Node.js
+├── setup-local.ps1        # Script para configurar y ejecutar local
+├── setup.sql              # Script SQL para crear tabla
+├── public/                # Archivos estáticos
+│   ├── index.html         # Página principal
+│   ├── styles.css         # Estilos
+│   └── app.js             # JavaScript del frontend
+└── README.md              # Este archivo
 ```
 
 ## Base de Datos MySQL
 
-La aplicación crea automáticamente la tabla `photos` con la siguiente estructura:
+La tabla `photos` tiene la siguiente estructura:
 
 ```sql
 CREATE TABLE photos (
   id INT AUTO_INCREMENT PRIMARY KEY,
   filename VARCHAR(255) NOT NULL,
-  url VARCHAR(512) NOT NULL,
+  url VARCHAR(512) NULL,
+  image_data LONGBLOB NULL,        -- Foto almacenada como BLOB
+  mime_type VARCHAR(50) NULL,      -- Tipo de imagen (image/jpeg, image/png)
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 ```
 
-## Control de Subida de Fotos
+**Nota:** Las fotos se almacenan directamente en MySQL como BLOB, por lo que están disponibles permanentemente.
 
-La aplicación permite controlar si los usuarios pueden subir fotos o solo visualizarlas/descargarlas:
+## Uso
 
-- **Por defecto**: La subida está **habilitada** (puedes subir fotos)
-- **Para deshabilitar**: Añade la variable de entorno `ENABLE_UPLOAD=false` en Vercel
-  - Cuando está deshabilitada, los botones de subida se ocultan automáticamente
-  - Los usuarios solo pueden ver la galería y descargar fotos
+### Subir Fotos
 
-**Uso recomendado:**
-- **Local**: Deja sin configurar (habilitado) para poder subir fotos durante desarrollo
-- **Producción**: Configura `ENABLE_UPLOAD=false` en Vercel para que solo se puedan ver/descargar fotos
+1. Abre la aplicación (local o producción)
+2. Haz clic en "Seleccionar fotos (PNG/JPG) - Puedes elegir múltiples"
+3. Selecciona todas tus fotos (Ctrl+A o selección múltiple)
+4. Haz clic en "Subir lote de fotos"
+5. Las fotos se guardarán directamente en MySQL
 
-## Notas Importantes
+### Visualizar y Descargar
 
-- En Vercel, los archivos se almacenan temporalmente en `/tmp` (solo durante la ejecución de la función)
-- Para producción, considera usar un servicio de almacenamiento como AWS S3, Cloudinary o Vercel Blob Storage
-- Las fotos subidas en Vercel no persisten entre despliegues (son serverless)
+- Haz clic en cualquier foto para verla en tamaño completo (lightbox)
+- Usa el botón "⬇ Descargar" en cada foto para descargarla
 
 ## Tecnologías Utilizadas
 
 - Node.js + Express
-- MySQL (mysql2)
+- MySQL (mysql2) - Clever Cloud
 - Multer (subida de archivos)
 - HTML/CSS/JavaScript vanilla
+- Vercel (hosting)
 
 ## Licencia
 
 ISC
-
