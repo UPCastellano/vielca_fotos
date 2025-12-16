@@ -49,7 +49,9 @@ async function initDb() {
       CREATE TABLE IF NOT EXISTS photos (
         id INT AUTO_INCREMENT PRIMARY KEY,
         filename VARCHAR(255) NOT NULL,
-        url VARCHAR(512) NOT NULL,
+        url VARCHAR(512),
+        image_data LONGBLOB,
+        mime_type VARCHAR(50),
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
@@ -141,6 +143,33 @@ app.post('/upload', upload.any(), async (req, res) => {
   }
 });
 
+// Ruta para servir fotos desde MySQL
+app.get('/api/photo/:filename', async (req, res) => {
+  const filename = req.params.filename;
+  
+  if (!pool) {
+    return res.status(404).send('Base de datos no disponible');
+  }
+  
+  try {
+    const [rows] = await pool.query(
+      'SELECT image_data, mime_type FROM photos WHERE filename = ?',
+      [filename]
+    );
+    
+    if (rows.length === 0) {
+      return res.status(404).send('Foto no encontrada');
+    }
+    
+    const photo = rows[0];
+    res.set('Content-Type', photo.mime_type || 'image/jpeg');
+    res.send(photo.image_data);
+  } catch (err) {
+    console.error('Error obteniendo foto de BD:', err);
+    res.status(500).send('Error obteniendo foto');
+  }
+});
+
 // Listar fotos
 app.get('/photos', async (req, res) => {
   try {
@@ -151,11 +180,19 @@ app.get('/photos', async (req, res) => {
         'SELECT filename, url, created_at FROM photos ORDER BY created_at DESC'
       );
       // Si las URLs son externas (http/https), usarlas directamente
-      // Si son locales (/uploads/...), verificar si el archivo existe
+      // Si son de MySQL (/api/photo/...), mantenerlas
       photos = rows.map((photo) => {
         // Si la URL ya es externa, mantenerla
-        if (photo.url.startsWith('http://') || photo.url.startsWith('https://')) {
+        if (photo.url && (photo.url.startsWith('http://') || photo.url.startsWith('https://'))) {
           return photo;
+        }
+        
+        // Si es de MySQL o no tiene URL, usar la ruta de API
+        if (!photo.url || photo.url.startsWith('/api/photo/')) {
+          return {
+            ...photo,
+            url: photo.url || `/api/photo/${photo.filename}`
+          };
         }
         
         // Si es local, verificar si existe el archivo
@@ -164,8 +201,11 @@ app.get('/photos', async (req, res) => {
           return photo; // Mantener URL local si existe
         }
         
-        // Si no existe localmente, devolver la URL tal cual (puede ser externa o rota)
-        return photo;
+        // Si no existe localmente, usar la ruta de API de MySQL
+        return {
+          ...photo,
+          url: `/api/photo/${photo.filename}`
+        };
       });
     } else {
       const files = fs.readdirSync(UPLOADS_DIR);
@@ -194,30 +234,28 @@ app.get('/photos', async (req, res) => {
 app.get('/download/:filename', async (req, res) => {
   const filename = req.params.filename;
   
-  // Si tenemos MySQL, buscar la URL completa de la foto
+  // Si tenemos MySQL, buscar la foto en la BD
   if (pool) {
     try {
       const [rows] = await pool.query(
-        'SELECT url FROM photos WHERE filename = ?',
+        'SELECT image_data, mime_type, url FROM photos WHERE filename = ?',
         [filename]
       );
       
       if (rows.length > 0) {
-        const photoUrl = rows[0].url;
+        const photo = rows[0];
+        
+        // Si tiene image_data en MySQL, servirla directamente
+        if (photo.image_data) {
+          res.set('Content-Type', photo.mime_type || 'image/jpeg');
+          res.set('Content-Disposition', `attachment; filename="${filename}"`);
+          return res.send(photo.image_data);
+        }
         
         // Si la URL es externa (http/https), redirigir
-        if (photoUrl.startsWith('http://') || photoUrl.startsWith('https://')) {
-          return res.redirect(photoUrl);
+        if (photo.url && (photo.url.startsWith('http://') || photo.url.startsWith('https://'))) {
+          return res.redirect(photo.url);
         }
-        
-        // Si es una URL local, intentar servirla
-        const filePath = path.join(UPLOADS_DIR, filename);
-        if (fs.existsSync(filePath)) {
-          return res.download(filePath);
-        }
-        
-        // Si no existe el archivo local, devolver error
-        return res.status(404).send('Archivo no encontrado. La foto puede estar en un servicio externo.');
       }
     } catch (err) {
       console.error('Error obteniendo foto de BD:', err);
