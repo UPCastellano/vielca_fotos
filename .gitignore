@@ -14,4 +14,5 @@ google-credentials.json
 client_secret*.json
 credentials/token.json
 credentials/
+VALORES_PARA_RENDER.txt
 
