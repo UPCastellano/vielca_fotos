@@ -55,19 +55,27 @@ async function initGoogleDrive() {
         }
       }
     } else if (process.env.GOOGLE_SERVICE_ACCOUNT) {
-      const credData = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT);
-      console.log('✓ Credenciales cargadas desde variable de entorno');
-      
-      // Verificar tipo
-      if (credData.web) {
-        isOAuth2 = true;
-        credentials = credData.web;
-        console.log('✓ Credenciales OAuth 2.0 detectadas');
-      } else if (credData.type === 'service_account') {
-        credentials = credData;
-        console.log('✓ Credenciales Service Account detectadas');
-      } else {
-        console.warn('⚠️  Formato de credenciales no reconocido');
+      try {
+        // Limpiar el JSON (eliminar saltos de línea y espacios extra)
+        const cleanedJson = process.env.GOOGLE_SERVICE_ACCOUNT.replace(/\n/g, '').replace(/\r/g, '').trim();
+        const credData = JSON.parse(cleanedJson);
+        console.log('✓ Credenciales cargadas desde variable de entorno');
+        
+        // Verificar tipo
+        if (credData.web) {
+          isOAuth2 = true;
+          credentials = credData.web;
+          console.log('✓ Credenciales OAuth 2.0 detectadas');
+        } else if (credData.type === 'service_account') {
+          credentials = credData;
+          console.log('✓ Credenciales Service Account detectadas');
+        } else {
+          console.warn('⚠️  Formato de credenciales no reconocido');
+          return;
+        }
+      } catch (err) {
+        console.error('❌ Error parseando GOOGLE_SERVICE_ACCOUNT:', err.message);
+        console.error('   Verifica que el JSON esté en una sola línea y sea válido');
         return;
       }
     } else {
@@ -105,9 +113,18 @@ async function initGoogleDrive() {
       let token;
       if (process.env.GOOGLE_DRIVE_TOKEN) {
         // Cargar desde variable de entorno (para Render/Vercel/producción)
-        token = JSON.parse(process.env.GOOGLE_DRIVE_TOKEN);
-        oAuth2Client.setCredentials(token);
-        console.log('✓ Token OAuth 2.0 cargado desde variable de entorno');
+        try {
+          // Limpiar el JSON (eliminar saltos de línea y espacios extra)
+          const cleanedTokenJson = process.env.GOOGLE_DRIVE_TOKEN.replace(/\n/g, '').replace(/\r/g, '').trim();
+          token = JSON.parse(cleanedTokenJson);
+          oAuth2Client.setCredentials(token);
+          console.log('✓ Token OAuth 2.0 cargado desde variable de entorno');
+        } catch (err) {
+          console.error('❌ Error parseando GOOGLE_DRIVE_TOKEN:', err.message);
+          console.error('   Verifica que el JSON del token esté en una sola línea y sea válido');
+          console.error('   Ejecuta: node auth-google.js y copia el token correctamente');
+          return;
+        }
       } else if (fs.existsSync(TOKEN_PATH)) {
         // Cargar desde archivo (para desarrollo local)
         token = JSON.parse(fs.readFileSync(TOKEN_PATH, 'utf8'));
