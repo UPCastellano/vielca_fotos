@@ -8,18 +8,20 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // Configuración de MySQL (Vercel/Producción o Local)
-// En Vercel: DB_HOST, DB_PORT, DB_USER, DB_PASSWORD, DB_NAME
+// Prioridad: MYSQL_ADDON_* (Clever Cloud) > DB_* (Vercel/Local)
 let dbConfig;
 if (process.env.MYSQL_ADDON_DB) {
-  // Entorno Clever Cloud (si usas add-on)
+  // Entorno Clever Cloud (add-on MySQL)
   dbConfig = {
+    host: process.env.MYSQL_ADDON_HOST,
+    port: parseInt(process.env.MYSQL_ADDON_PORT) || 3306,
     user: process.env.MYSQL_ADDON_USER,
     password: process.env.MYSQL_ADDON_PASSWORD,
     database: process.env.MYSQL_ADDON_DB,
-    socketPath: process.env.CC_MYSQL_PROXYSQL_SOCKET_PATH,
+    socketPath: process.env.CC_MYSQL_PROXYSQL_SOCKET_PATH, // Opcional, solo si existe
   };
 } else {
-  // Vercel/Producción o Local - usa variables de entorno
+  // Vercel/Producción o Local - usa variables de entorno DB_*
   dbConfig = {
     host: process.env.DB_HOST,
     port: parseInt(process.env.DB_PORT) || 3306,
